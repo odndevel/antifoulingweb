@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+      <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관측기기 유지보수 보고서 작성 시스템</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 20px;
+            background: #f4f4f4;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .form-container {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        .report-container {
+            display: none;
+        }
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            .report-container, .report-container * {
+                visibility: visible;
+            }
+            .report-container {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 210mm;
+                margin: 0;
+            }
+            .page-content {
+                width: 210mm;
+                padding: 10mm;
+                box-sizing: border-box;
+                page-break-after: always; /* 각 이력이 끝난 후 새로운 페이지로 이동 */
+                background: white;
+            }
+            .report-image {
+                max-width: 180mm;
+                max-height: 200mm;
+                height: auto;
+                width: auto;
+                page-break-inside: avoid; /* 이미지가 페이지 중간에서 잘리지 않도록 설정 */
+            }
+            .report-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+            }
+            .report-header-info {
+                text-align: right;
+            }
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <nav class="main-nav">
+  <ul>
+    <li><a href="summary.html" class="menu-btn">시스템 개요도</a></li>
+    <li><a href="Sensor Error detect.html" class="menu-btn">바이오파울링 AI 인식 시스템</a></li>
+    <li><a href="maintenance.html" class="menu-btn">관측 부표 유지보수 관리</a></li>
+    <li><a href="AB Check.html" class="menu-btn">관측기기 A/B 수질지표 비교 분석 (패턴 유사성)</a></li>
+    <li><a href="serial.html" class="menu-btn">관측부표 일련번호 생성기</a></li>
+    <li><a href="report.html" class="menu-btn">관측부표 유지보수 보고서 툴</a></li>
+    <li><a href="https://metaocean.odn.us" class="menu-btn">메타오션 데이터서비스</a></li>
+  </ul>
+</nav>
+    <h2>관측기기 유지보수 보고서 작성 시스템</h2>
+
+    <!-- 유지보수 이력 입력 폼 -->
+    <div class="form-container">
+        <h3>유지보수 이력 등록</h3>
+        <div class="form-group">
+            <label for="date">유지보수 날짜:</label>
+            <input type="date" id="date" name="date" required>
+        </div>
+        <div class="form-group">
+            <label for="serial">관측기기 일련번호:</label>
+            <input type="text" id="serial" name="serial" required>
+        </div>
+        <div class="form-group">
+            <label for="sensor">센서 종류:</label>
+            <select id="sensor" name="sensor" required>
+                <option value="">선택하세요</option>
+                <option value="Aqualabo Tripod">Aqualabo Tripod</option>
+                <option value="Insitu AquaTROLL AT400">Insitu AquaTROLL AT400</option>
+                <option value="Chemins MPS400">Chemins MPS400</option>
+                <option value="기타">기타</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="biofouling">바이오파울링 오염 예측:</label>
+            <select id="biofouling" name="biofouling" required>
+                <option value="">선택하세요</option>
+                <option value="O">O</option>
+                <option value="X">X</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="predictImage">바이오파울링 예측 이미지:</label>
+            <input type="file" id="predictImage" name="predictImage" accept="image/*">
+        </div>
+        <div class="form-group">
+            <label for="activityImage">유지보수 활동 이미지:</label>
+            <input type="file" id="activityImage" name="activityImage" accept="image/*">
+        </div>
+        <div class="form-group">
+            <label>유지보수 전 측정치:</label>
+            <input type="text" id="beforeTemp" name="beforeTemp" placeholder="수온(℃)">
+            <input type="text" id="beforeDO" name="beforeDO" placeholder="용존산소(mg/L)">
+            <input type="text" id="beforeSalinity" name="beforeSalinity" placeholder="염분(psu)">
+            <input type="text" id="beforePH" name="beforePH" placeholder="pH">
+        </div>
+        <div class="form-group">
+            <label for="beforeMeasureImage">유지보수 전 측정치 이미지:</label>
+            <input type="file" id="beforeMeasureImage" name="beforeMeasureImage" accept="image/*">
+        </div>
+        <div class="form-group">
+            <label>유지보수 후 측정치:</label>
+            <input type="text" id="afterTemp" name="afterTemp" placeholder="수온(℃)">
+            <input type="text" id="afterDO" name="afterDO" placeholder="용존산소(mg/L)">
+            <input type="text" id="afterSalinity" name="afterSalinity" placeholder="염분(psu)">
+            <input type="text" id="afterPH" name="afterPH" placeholder="pH">
+        </div>
+        <div class="form-group">
+            <label for="afterMeasureImage">유지보수 후 측정치 이미지:</label>
+            <input type="file" id="afterMeasureImage" name="afterMeasureImage" accept="image/*">
+        </div>
+        <button onclick="registerRecord()">등록</button>
+    </div>
+
+    <!-- 보고서 헤더 정보 입력 폼 -->
+    <div class="form-container">
+        <h3>보고서 정보 입력</h3>
+        <div class="form-group">
+            <label for="companyName">기업명:</label>
+            <input type="text" id="companyName" name="companyName" placeholder="기업명을 입력하세요">
+        </div>
+        <div class="form-group">
+            <label for="inspectorName">점검자 이름:</label>
+            <input type="text" id="inspectorName" name="inspectorName" placeholder="점검자 이름을 입력하세요">
+        </div>
+        <div class="form-group">
+            <label for="inspectorContact">점검자 연락처:</label>
+            <input type="text" id="inspectorContact" name="inspectorContact" placeholder="점검자 연락처를 입력하세요">
+        </div>
+    </div>
+
+    <!-- 데이터 내보내기 및 가져오기 폼 -->
+    <div class="form-container">
+        <h3>데이터 관리</h3>
+        <div class="form-group">
+            <button onclick="exportData()">데이터 내보내기</button>
+        </div>
+        <div class="form-group">
+            <label for="importFile">데이터 가져오기:</label>
+            <input type="file" id="importFile" name="importFile" accept=".json">
+            <button onclick="importData()">가져오기</button>
+        </div>
+    </div>
+
+    <!-- 유지보수 기록 테이블 -->
+    <table id="maintenanceRecords">
+        <thead>
+            <tr>
+                <th><input type="checkbox" id="checkAll"> 전체 선택</th>
+                <th>날짜</th>
+                <th>일련번호</th>
+                <th>센서 종류</th>
+                <th>바이오파울링 오염 예측</th>
+                <th>예측 이미지</th>
+                <th>활동 이미지</th>
+                <th>전 측정치</th>
+                <th>전 측정치 이미지</th>
+                <th>후 측정치</th>
+                <th>후 측정치 이미지</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- 데이터는 JavaScript로 동적으로 추가됩니다 -->
+        </tbody>
+    </table>
+    <button onclick="generateReport()">보고서 생성 및 출력</button>
+
+    <!-- 보고서 출력용 컨테이너 -->
+    <div class="report-container" id="reportContainer"></div>
+
+    <script>
+        let records = [];
+        let recordId = 1;
+        const fileSizeLimit = 1048576; // 1MB in bytes
+
+        // 페이지 로드 시 localStorage에서 데이터 불러오기
+        function loadRecords() {
+            const savedRecords = localStorage.getItem('maintenanceRecords');
+            if (savedRecords) {
+                records = JSON.parse(savedRecords);
+                // recordId를 최신화 (가장 큰 ID + 1)
+                if (records.length > 0) {
+                    recordId = Math.max(...records.map(r => r.id)) + 1;
+                }
+                updateTable();
+            }
+        }
+
+        // 페이지 로드 시 데이터 불러오기 실행
+        window.onload = loadRecords;
+
+        // 전체 선택 기능
+        document.querySelector('#checkAll').addEventListener('click', function() {
+            const isChecked = this.checked;
+            const checkboxes = document.querySelectorAll('.chk');
+            for (const checkbox of checkboxes) {
+                checkbox.checked = isChecked;
+            }
+        });
+
+        // 개별 체크박스 클릭 시 전체 선택 상태 업데이트
+        function updateCheckAll() {
+            const checkboxes = document.querySelectorAll('.chk');
+            const totalCnt = checkboxes.length;
+            const checkedCnt = document.querySelectorAll('.chk:checked').length;
+            document.querySelector('#checkAll').checked = totalCnt === checkedCnt;
+        }
+
+        // 파일을 Base64로 변환하는 함수
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                if (!file) {
+                    resolve('');
+                    return;
+                }
+                if (file.size > fileSizeLimit) {
+                    reject(new Error('파일 크기가 1MB를 초과합니다.'));
+                    return;
+                }
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // 유지보수 이력 등록
+        async function registerRecord() {
+            const date = document.getElementById('date').value;
+            const serial = document.getElementById('serial').value;
+            const sensor = document.getElementById('sensor').value;
+            const biofouling = document.getElementById('biofouling').value;
+            
+            if (!date || !serial || !sensor || !biofouling) {
+                alert('필수 항목을 모두 입력해주세요.');
+                return;
+            }
+
+            try {
+                const predictImageFile = document.getElementById('predictImage').files[0];
+                const activityImageFile = document.getElementById('activityImage').files[0];
+                const beforeMeasureImageFile = document.getElementById('beforeMeasureImage').files[0];
+                const afterMeasureImageFile = document.getElementById('afterMeasureImage').files[0];
+
+                const predictImage = await fileToBase64(predictImageFile);
+                const activityImage = await fileToBase64(activityImageFile);
+                const beforeMeasureImage = await fileToBase64(beforeMeasureImageFile);
+                const afterMeasureImage = await fileToBase64(afterMeasureImageFile);
+
+                const beforeData = {
+                    temp: document.getElementById('beforeTemp').value,
+                    do: document.getElementById('beforeDO').value,
+                    salinity: document.getElementById('beforeSalinity').value,
+                    ph: document.getElementById('beforePH').value
+                };
+                const afterData = {
+                    temp: document.getElementById('afterTemp').value,
+                    do: document.getElementById('afterDO').value,
+                    salinity: document.getElementById('afterSalinity').value,
+                    ph: document.getElementById('afterPH').value
+                };
+
+                const record = {
+                    id: recordId++,
+                    date,
+                    serial,
+                    sensor,
+                    biofouling,
+                    predictImage,
+                    activityImage,
+                    beforeMeasureImage,
+                    afterMeasureImage,
+                    beforeData: `수온: ${beforeData.temp}℃, DO: ${beforeData.do}mg/L, 염분: ${beforeData.salinity}psu, pH: ${beforeData.ph}`,
+                    afterData: `수온: ${afterData.temp}℃, DO: ${afterData.do}mg/L, 염분: ${afterData.salinity}psu, pH: ${afterData.ph}`
+                };
+
+                records.push(record);
+                // localStorage에 데이터 저장
+                localStorage.setItem('maintenanceRecords', JSON.stringify(records));
+                updateTable();
+                clearForm();
+            } catch (error) {
+                alert('이미지 처리 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+
+        // 테이블 업데이트
+        function updateTable() {
+            const tbody = document.querySelector('#maintenanceRecords tbody');
+            tbody.innerHTML = '';
+            records.forEach(record => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><input type="checkbox" class="chk" data-id="${record.id}"></td>
+                    <td>${record.date}</td>
+                    <td>${record.serial}</td>
+                    <td>${record.sensor}</td>
+                    <td>${record.biofouling}</td>
+                    <td>${record.predictImage ? `<img src="${record.predictImage}" width="50" height="50" alt="예측 이미지">` : '없음'}</td>
+                    <td>${record.activityImage ? `<img src="${record.activityImage}" width="50" height="50" alt="활동 이미지">` : '없음'}</td>
+                    <td>${record.beforeData}</td>
+                    <td>${record.beforeMeasureImage ? `<img src="${record.beforeMeasureImage}" width="50" height="50" alt="전 측정치 이미지">` : '없음'}</td>
+                    <td>${record.afterData}</td>
+                    <td>${record.afterMeasureImage ? `<img src="${record.afterMeasureImage}" width="50" height="50" alt="후 측정치 이미지">` : '없음'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            document.querySelectorAll('.chk').forEach(checkbox => {
+                checkbox.addEventListener('click', updateCheckAll);
+            });
+        }
+
+        // 폼 초기화
+        function clearForm() {
+            document.getElementById('date').value = '';
+            document.getElementById('serial').value = '';
+            document.getElementById('sensor').value = '';
+            document.getElementById('biofouling').value = '';
+            document.getElementById('predictImage').value = '';
+            document.getElementById('activityImage').value = '';
+            document.getElementById('beforeTemp').value = '';
+            document.getElementById('beforeDO').value = '';
+            document.getElementById('beforeSalinity').value = '';
+            document.getElementById('beforePH').value = '';
+            document.getElementById('beforeMeasureImage').value = '';
+            document.getElementById('afterTemp').value = '';
+            document.getElementById('afterDO').value = '';
+            document.getElementById('afterSalinity').value = '';
+            document.getElementById('afterPH').value = '';
+            document.getElementById('afterMeasureImage').value = '';
+        }
+
+        // 데이터 내보내기
+        function exportData() {
+            const dataStr = JSON.stringify(records, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'maintenance_records.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // 데이터 가져오기
+        function importData() {
+            const fileInput = document.getElementById('importFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('파일을 선택해주세요.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (Array.isArray(importedData)) {
+                        records = importedData;
+                        // recordId 최신화
+                        if (records.length > 0) {
+                            recordId = Math.max(...records.map(r => r.id)) + 1;
+                        }
+                        localStorage.setItem('maintenanceRecords', JSON.stringify(records));
+                        updateTable();
+                        alert('데이터를 성공적으로 가져왔습니다.');
+                    } else {
+                        alert('잘못된 데이터 형식입니다. 배열 형식이어야 합니다.');
+                    }
+                } catch (error) {
+                    alert('데이터를 가져오는 중 오류가 발생했습니다: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // 보고서 생성 및 출력
+        function generateReport() {
+            const selectedRecords = document.querySelectorAll('.chk:checked');
+            if (selectedRecords.length === 0) {
+                alert('보고서로 출력할 기록을 선택해주세요.');
+                return;
+            }
+
+            const companyName = document.getElementById('companyName').value || '기업명 미입력';
+            const inspectorName = document.getElementById('inspectorName').value || '점검자 미입력';
+            const inspectorContact = document.getElementById('inspectorContact').value || '연락처 미입력';
+
+            let reportHTML = '';
+            selectedRecords.forEach(checkbox => {
+                const recordId = parseInt(checkbox.dataset.id);
+                const record = records.find(r => r.id === recordId);
+                if (record) {
+                    reportHTML += `
+                        <section class="page-content">
+                            <div class="report-header">
+                                <h2>유지보수 보고서</h2>
+                                <div class="report-header-info">
+                                    <p><strong>기업명:</strong> ${companyName}</p>
+                                    <p><strong>점검자:</strong> ${inspectorName}</p>
+                                    <p><strong>연락처:</strong> ${inspectorContact}</p>
+                                </div>
+                            </div>
+                            <p><strong>날짜:</strong> ${record.date}</p>
+                            <p><strong>일련번호:</strong> ${record.serial}</p>
+                            <p><strong>센서 종류:</strong> ${record.sensor}</p>
+                            <p><strong>바이오파울링 오염 예측:</strong> ${record.biofouling}</p>
+                            <p><strong>유지보수 전 측정치:</strong> ${record.beforeData}</p>
+                            <p><strong>유지보수 후 측정치:</strong> ${record.afterData}</p>
+                            <h3>예측 이미지</h3>
+                            ${record.predictImage ? `<img src="${record.predictImage}" class="report-image" alt="예측 이미지">` : '<p>이미지 없음</p>'}
+                            <h3>활동 이미지</h3>
+                            ${record.activityImage ? `<img src="${record.activityImage}" class="report-image" alt="활동 이미지">` : '<p>이미지 없음</p>'}
+                            <h3>유지보수 전 측정치 이미지</h3>
+                            ${record.beforeMeasureImage ? `<img src="${record.beforeMeasureImage}" class="report-image" alt="전 측정치 이미지">` : '<p>이미지 없음</p>'}
+                            <h3>유지보수 후 측정치 이미지</h3>
+                            ${record.afterMeasureImage ? `<img src="${record.afterMeasureImage}" class="report-image" alt="후 측정치 이미지">` : '<p>이미지 없음</p>'}
+                        </section>
+                    `;
+                }
+            });
+
+            const reportContainer = document.getElementById('reportContainer');
+            reportContainer.innerHTML = reportHTML;
+            reportContainer.style.display = 'block'; // 잠시 표시하여 렌더링 확인
+
+            // DOM이 완전히 렌더링될 시간을 주기 위해 지연 후 인쇄
+            setTimeout(() => {
+                window.print();
+                reportContainer.style.display = 'none'; // 인쇄 후 다시 숨김
+            }, 500); // 500ms 지연
+        }
+    </script>
+</body
