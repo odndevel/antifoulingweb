@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <title>관측 부표 유지보수 관리 (IndexedDB 백업/복원)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    .container { max-width: 1300px; margin: auto; }
+    label { display: block; margin-top: 16px; font-weight: bold; }
+    input, select { width: 100%; padding: 8px; margin-top: 4px; }
+    .flex-row { display: flex; gap: 16px; }
+    .flex-row > div { flex: 1; }
+    .img-preview { max-width: 100px; max-height: 80px; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 32px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background: #f0f0f0; }
+    .measure-group { border: 1px solid #eee; padding: 8px; margin-top: 8px; }
+    .measure-title { font-weight: bold; margin-bottom: 4px; }
+    .backup-btns { margin: 24px 0 0 0; }
+    .backup-btns button { margin-right: 8px; }
+  </style>
+</head>
+<body>
+<nav class="main-nav">
+  <ul>
+    <li><a href="summary.html" class="menu-btn">시스템 개요도</a></li>
+    <li><a href="Sensor Error detect.html" class="menu-btn">바이오파울링 AI 인식 시스템</a></li>
+    <li><a href="maintenance.html" class="menu-btn">관측 부표 유지보수 관리</a></li>
+    <li><a href="AB Check.html" class="menu-btn">관측기기 A/B 수질지표 비교 분석 (패턴 유사성)</a></li>
+    <li><a href="serial.html" class="menu-btn">관측부표 일련번호 생성기</a></li>
+    <li><a href="https://metaocean.odn.us" class="menu-btn">메타오션 데이터서비스</a></li>
+  </ul>
+</nav>
+<div class="container">
+  <h2>관측 부표 유지보수 관리</h2>
+  <div class="backup-btns">
+    <button onclick="exportBackup()">백업(내보내기)</button>
+    <button onclick="document.getElementById('importFile').click()">복원(불러오기)</button>
+    <input type="file" id="importFile" accept=".json" style="display:none">
+  </div>
+  <form id="maintenanceForm">
+    <label>유지보수 날짜
+      <input type="date" id="date" required>
+    </label>
+    <label>관측기기 일련번호
+      <input type="text" id="serial" placeholder="예: AT400-001" required>
+    </label>
+    <label>센서 종류
+      <select id="sensorType" required>
+        <option value="">선택하세요</option>
+        <option value="Aqualabo Tripod">Aqualabo Tripod</option>
+        <option value="Insitu AquaTROLL AT400">Insitu AquaTROLL AT400</option>
+        <option value="Chemins MPS400">Chemins MPS400</option>
+        <option value="기타">기타</option>
+      </select>
+    </label>
+    <label>바이오파울링 오염 예측
+      <select id="biofouling" required>
+        <option value="">선택하세요</option>
+        <option value="O">O</option>
+        <option value="X">X</option>
+      </select>
+    </label>
+    <label>바이오파울링 예측 이미지
+      <input type="file" id="biofoulingImg" accept="image/*">
+      <img id="biofoulingPreview" class="img-preview" />
+    </label>
+    <label>유지보수 활동 이미지(세정 등)
+      <input type="file" id="activityImg" accept="image/*">
+      <img id="activityPreview" class="img-preview" />
+    </label>
+    <div class="flex-row">
+      <div class="measure-group">
+        <div class="measure-title">유지보수 전 측정치</div>
+        <label>수온(℃)
+          <input type="text" id="beforeTemp" placeholder="숫자 입력">
+        </label>
+        <label>용존산소(mg/L)
+          <input type="text" id="beforeDO" placeholder="숫자 입력">
+        </label>
+        <label>염분(psu)
+          <input type="text" id="beforeSalinity" placeholder="숫자 입력">
+        </label>
+        <label>pH
+          <input type="text" id="beforePH" placeholder="숫자 입력">
+        </label>
+        <label>측정치 이미지(1장)
+          <input type="file" id="beforeMeasureImg" accept="image/*">
+          <img id="beforeMeasurePreview" class="img-preview" />
+        </label>
+      </div>
+      <div class="measure-group">
+        <div class="measure-title">유지보수 후 측정치</div>
+        <label>수온(℃)
+          <input type="text" id="afterTemp" placeholder="숫자 입력">
+        </label>
+        <label>용존산소(mg/L)
+          <input type="text" id="afterDO" placeholder="숫자 입력">
+        </label>
+        <label>염분(psu)
+          <input type="text" id="afterSalinity" placeholder="숫자 입력">
+        </label>
+        <label>pH
+          <input type="text" id="afterPH" placeholder="숫자 입력">
+        </label>
+        <label>측정치 이미지(1장)
+          <input type="file" id="afterMeasureImg" accept="image/*">
+          <img id="afterMeasurePreview" class="img-preview" />
+        </label>
+      </div>
+    </div>
+    <button type="submit" style="margin-top:20px;">등록</button>
+  </form>
+
+  <h3>유지보수 기록</h3>
+  <table id="recordsTable">
+    <thead>
+      <tr>
+        <th>날짜</th>
+        <th>일련번호</th>
+        <th>센서 종류</th>
+        <th>바이오파울링<br>오염 예측</th>
+        <th>바이오파울링<br>예측 이미지</th>
+        <th>활동 이미지</th>
+        <th>전 측정치<br>(수온/DO/염분/pH/이미지)</th>
+        <th>후 측정치<br>(수온/DO/염분/pH/이미지)</th>
+      </tr>
+    </thead>
+    <tbody>
+    </tbody>
+  </table>
+</div>
+<script>
+// ------------------ IndexedDB 기본 설정 ------------------
+let db;
+const DB_NAME = "BuoyMaintenanceDB";
+const STORE_NAME = "records";
+const request = indexedDB.open(DB_NAME, 1);
+
+request.onupgradeneeded = function(event) {
+  db = event.target.result;
+  if (!db.objectStoreNames.contains(STORE_NAME)) {
+    db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+  }
+};
+
+request.onsuccess = function(event) {
+  db = event.target.result;
+  displayData();
+};
+
+function fileToDataURL(file, callback) {
+  if (!file) return callback('');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    callback(e.target.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+function previewImage(inputId, imgId) {
+  document.getElementById(inputId).addEventListener('change', function(){
+    const file = this.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById(imgId).src = e.target.result;
+      }
+      reader.readAsDataURL(file);
+    } else {
+      document.getElementById(imgId).src = '';
+    }
+  });
+}
+
+previewImage('activityImg', 'activityPreview');
+previewImage('biofoulingImg', 'biofoulingPreview');
+previewImage('beforeMeasureImg', 'beforeMeasurePreview');
+previewImage('afterMeasureImg', 'afterMeasurePreview');
+
+document.getElementById('maintenanceForm').onsubmit = function(e) {
+  e.preventDefault();
+
+  const date = document.getElementById('date').value;
+  const serial = document.getElementById('serial').value;
+  const sensorType = document.getElementById('sensorType').value;
+  const biofouling = document.getElementById('biofouling').value;
+
+  const beforeTemp = document.getElementById('beforeTemp').value;
+  const beforeDO = document.getElementById('beforeDO').value;
+  const beforeSalinity = document.getElementById('beforeSalinity').value;
+  const beforePH = document.getElementById('beforePH').value;
+  const afterTemp = document.getElementById('afterTemp').value;
+  const afterDO = document.getElementById('afterDO').value;
+  const afterSalinity = document.getElementById('afterSalinity').value;
+  const afterPH = document.getElementById('afterPH').value;
+
+  const biofoulingImgFile = document.getElementById('biofoulingImg').files[0];
+  const activityImgFile = document.getElementById('activityImg').files[0];
+  const beforeMeasureImgFile = document.getElementById('beforeMeasureImg').files[0];
+  const afterMeasureImgFile = document.getElementById('afterMeasureImg').files[0];
+
+  fileToDataURL(biofoulingImgFile, function(biofoulingImg){
+    fileToDataURL(activityImgFile, function(activityImg){
+      fileToDataURL(beforeMeasureImgFile, function(beforeMeasureImg){
+        fileToDataURL(afterMeasureImgFile, function(afterMeasureImg){
+          const tx = db.transaction([STORE_NAME], 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          store.add({
+            date, serial, sensorType, biofouling, biofoulingImg, activityImg,
+            before: { temp: beforeTemp, do: beforeDO, salinity: beforeSalinity, ph: beforePH, img: beforeMeasureImg },
+            after: { temp: afterTemp, do: afterDO, salinity: afterSalinity, ph: afterPH, img: afterMeasureImg }
+          });
+          tx.oncomplete = () => {
+            displayData();
+            document.getElementById('maintenanceForm').reset();
+            ['activityPreview','biofoulingPreview','beforeMeasurePreview','afterMeasurePreview'].forEach(id => document.getElementById(id).src = '');
+          };
+        });
+      });
+    });
+  });
+};
+
+function displayData() {
+  const tx = db.transaction([STORE_NAME], 'readonly');
+  const store = tx.objectStore(STORE_NAME);
+  const req = store.getAll();
+  req.onsuccess = function() {
+    const tbody = document.getElementById('recordsTable').querySelector('tbody');
+    tbody.innerHTML = '';
+    req.result.forEach(item => {
+      const beforeCell = `
+        <div>수온: ${item.before.temp}</div>
+        <div>DO: ${item.before.do}</div>
+        <div>염분: ${item.before.salinity}</div>
+        <div>pH: ${item.before.ph}</div>
+        <div>${item.before.img ? `<img src="${item.before.img}" class="img-preview"/>` : ''}</div>
+      `;
+      const afterCell = `
+        <div>수온: ${item.after.temp}</div>
+        <div>DO: ${item.after.do}</div>
+        <div>염분: ${item.after.salinity}</div>
+        <div>pH: ${item.after.ph}</div>
+        <div>${item.after.img ? `<img src="${item.after.img}" class="img-preview"/>` : ''}</div>
+      `;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${item.date}</td>
+        <td>${item.serial}</td>
+        <td>${item.sensorType}</td>
+        <td>${item.biofouling}</td>
+        <td>${item.biofoulingImg ? `<img src="${item.biofoulingImg}" class="img-preview"/>` : ''}</td>
+        <td>${item.activityImg ? `<img src="${item.activityImg}" class="img-preview"/>` : ''}</td>
+        <td>${beforeCell}</td>
+        <td>${afterCell}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  };
+}
+
+// ------------------ 백업(내보내기) 기능 ------------------
+function exportBackup() {
+  const tx = db.transaction([STORE_NAME], 'readonly');
+  const store = tx.objectStore(STORE_NAME);
+  const req = store.getAll();
+  req.onsuccess = function() {
+    const data = req.result;
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'buoy_maintenance_backup.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    alert('백업 파일이 다운로드되었습니다.');
+  };
+}
+
+// ------------------ 복원(불러오기) 기능 ------------------
+document.getElementById('importFile').addEventListener('change', function(e){
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    try {
+      const data = JSON.parse(event.target.result);
+      if (!Array.isArray(data)) {
+        alert('올바르지 않은 백업 파일입니다.');
+        return;
+      }
+      // 기존 데이터 삭제 후 복원
+      const txClear = db.transaction([STORE_NAME], 'readwrite');
+      const store = txClear.objectStore(STORE_NAME);
+      const clearReq = store.clear();
+      clearReq.onsuccess = function() {
+        const tx = db.transaction([STORE_NAME], 'readwrite');
+        const store2 = tx.objectStore(STORE_NAME);
+        data.forEach(item => store2.add(item));
+        tx.oncomplete = function() {
+          displayData();
+          alert('복원이 완료되었습니다.');
+        };
+      };
+    } catch (err) {
+      alert('복원 중 오류 발생: ' + err);
+    }
+  };
+  reader.readAsText(file);
+});
+</script>
+</body>
+</html>

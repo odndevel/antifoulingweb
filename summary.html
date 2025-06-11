@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <title>O-XIS 해양 관측 부표 바이오파울링 대응 시스템</title>
+  <style>
+      body {
+      font-family: 'Noto Sans KR', Arial, sans-serif;
+      background: #f4f8fb;
+      margin: 0;
+      padding-top: 70px; /* 메뉴 높이만큼 상단 패딩 추가 */
+    }
+    .container {
+      max-width: 1300px;
+      margin: 40px auto;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 16px rgba(30,60,120,0.08);
+      padding: 40px 36px;
+    }
+    h1 {
+      color: #1976d2;
+      font-size: 2em;
+      margin-bottom: 10px;
+    }
+    .desc {
+      color: #333;
+      font-size: 1.1em;
+      margin-bottom: 30px;
+    }
+    .img-section {
+      display: block; /* 한 줄씩 세로 배치 */
+      margin-bottom: 32px;
+    }
+    .img-block {
+      width: 100%;
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .img-block img {
+      max-width: 100%;
+      max-height: 1800px;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(30,60,120,0.10);
+      background: #e0e7ef;
+    }
+    .img-caption {
+      margin-top: 12px;
+      font-size: 1em;
+      color: #444;
+    }
+    @media (max-width: 700px) {
+      .img-block {
+        margin-bottom: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+<nav class="main-nav">
+  <ul>
+    <li><a href="summary.html" class="menu-btn">시스템 개요도</a></li>
+    <li><a href="Sensor Error detect.html" class="menu-btn">바이오파울링 AI 인식 시스템</a></li>
+    <li><a href="maintenance.html" class="menu-btn">관측 부표 유지보수 관리</a></li>
+    <li><a href="AB Check.html" class="menu-btn">관측기기 A/B 수질지표 비교 분석 (패턴 유사성)</a></li>
+    <li><a href="serial.html" class="menu-btn">관측부표 일련번호 생성기</a></li>
+    <li><a href="https://metaocean.odn.us" class="menu-btn">메타오션 데이터서비스</a></li>
+  </ul>
+</nav>
+  <div class="container">
+    <h1>O-XIS 해양 관측 부표<br>바이오파울링 대응 시스템</h1>
+    <div class="desc">
+      O-XIS 해양 관측 부표 바이오파울링 대응 시스템은 실시간 해양 환경 모니터링과 바이오파울링(생물부착) 오염 예측 및 관리 기능을 제공합니다.<br>
+      아래 이미지는 시스템의 주요 구성, 현장 설치 모습 또는 데이터 예시를 보여줍니다.
+    </div>
+
+    <div class="img-section">
+      <div class="img-block">
+        <img src="image\개요도.png" alt="O-XIS 바이오파울링 오염 대응 이동형 시스템 구성 예시">
+        <div class="img-caption">O-XIS 바이오파울링 오염 대응 이동형 시스템 구성 예시</div>
+      </div>
+      <div class="img-block">
+        <img src="image\종합 시나리오.png" alt="현장 운영 및 관측기기 바이오파울링 대응 시나리오">
+        <div class="img-caption">현장 운영 및 관측기기 바이오파울링 대응 시나리오</div>
+      </div>
+    </div>
+
+    <div class="desc" style="font-size:0.97em; color:#607d8b;">
+      * 이미지는 O-XIS 시스템의 실제 운영 환경 또는 시뮬레이션 결과를 예시로 보여줍니다.<br>
+      * 바이오파울링 대응, 센서 유지보수, 실시간 데이터 모니터링 등 다양한 활용이 가능합니다.
+    </div>
+  </div>
+</body>
+</html>
