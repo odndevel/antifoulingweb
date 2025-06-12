@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>관측기기 A/B 수질지표 비교 (여러 파일 업로드 지원)</title>
+  <style>
+    body { font-family: '맑은 고딕', Arial, sans-serif; margin: 40px; }
+    h2 { color: #1976d2; }
+    .input-section { margin-bottom: 20px; }
+    .input-group { margin-bottom: 5px; }
+    label { margin-right: 10px; }
+    #alert { color: red; font-weight: bold; margin-bottom: 20px; }
+    .chart-container { margin-bottom: 40px; }
+    #inputArea { margin-bottom: 20px; }
+    #saveBtn { margin-bottom: 30px; }
+    .footnote { margin-top:30px; font-size:15px; color:#333; }
+    .footnote ul { margin-left:18px; }
+    .footnote li { margin-bottom:8px; }
+    .footnote sup { color:#1976d2; }
+    .footnote-desc { font-size:13px; color:#888; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h2>관측기기 A/B 수질지표 비교 분석 (여러 배치 JSON 파일 업로드)</h2>
+  <div id="inputArea">
+    <div class="input-section">
+      <strong>기기 A (최대 4개 배치 JSON 파일 업로드)</strong><br>
+      <div class="input-group">
+        <label>파일: <input type="file" id="fileA" accept=".json" multiple></label>
+      </div>
+    </div>
+    <div class="input-section">
+      <strong>기기 B (최대 4개 배치 JSON 파일 업로드)</strong><br>
+      <div class="input-group">
+        <label>파일: <input type="file" id="fileB" accept=".json" multiple></label>
+      </div>
+    </div>
+    <button onclick="analyze()">분석하기</button>
+  </div>
+  <button id="saveBtn" onclick="saveAnalysis()" style="display:none;">분석 결과 저장</button>
+  <div id="alert"></div>
+  <div class="chart-container"><canvas id="chartTemp" width="1000" height="300"></canvas></div>
+  <div class="chart-container"><canvas id="chartO2" width="1000" height="300"></canvas></div>
+  <div class="chart-container"><canvas id="chartSal" width="1000" height="300"></canvas></div>
+  <div class="chart-container"><canvas id="chartPh" width="1000" height="300"></canvas></div>
+
+  <div class="footnote">
+    <b>A/B 관측기기 비교란?</b><br>
+    두 개의 관측기기(A, B)에서 같은 시기(분단위)로 집계한 수질 데이터를 시간축에 맞춰 나란히 비교하여,
+    각 지표(수온, 용존산소, 염도, pH)의 변화 양상을 한눈에 파악할 수 있도록 하는 기능입니다.<br><br>
+    <b>유사성 분석 지표의 의미<sup>*</sup></b>
+    <ul>
+      <li>
+        <b>상관계수(Pearson Correlation)</b>  
+        <br>
+        - 두 기기의 값 자체가 얼마나 비슷하게 움직이는지(동조성)를 -1~1 범위로 나타냅니다.<br>
+        - 1에 가까울수록 완전히 같은 방향, 0이면 무관, -1이면 반대 방향으로 움직임을 의미합니다.
+      </li>
+      <li>
+        <b>패턴(변화율) 상관계수</b>
+        <br>
+        - 값 자체가 아니라, 값의 변화폭(증감량/기울기)의 동조성을 측정합니다.<br>
+        - 두 기기 데이터가 같은 패턴(상승·하락 구간, 진폭 등)으로 움직이는지 확인할 때 사용합니다.
+      </li>
+      <li>
+        <b>DTW(Dynamic Time Warping) 거리</b>
+        <br>
+        - 두 시계열의 패턴이 시간축이 조금 어긋나도 전체적으로 얼마나 유사한지 측정하는 거리값입니다.<br>
+        - 값이 작을수록 패턴이 더 비슷하며, 단위는 상대적(0에 가까울수록 유사)입니다.
+      </li>
+    </ul>
+    <div class="footnote-desc">
+      <sup>*</sup> 유사성 분석은 분단위로 시간대를 맞춘 뒤, 겹치는 구간만을 대상으로 계산됩니다.<br>
+      패턴 유사성 지표는 값의 변화 양상(트렌드, 진폭, 타이밍 등)이 실제로 얼마나 비슷한지 정량적으로 판단하는 데 활용할 수 있습니다.
+    </div>
+  </div>
+
+  <script>
+    // 파일 저장 함수 (다운로드 폴더에 자동 저장)
+    function saveFile(data, filename = "biofouling_data.json") {
+      let blob;
+      if (typeof data === "string") {
+        blob = new Blob([data], {type: "application/octet-stream"});
+      } else {
+        blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // unit별 자동 분류, measure_time을 ms로 통일
+    function normalizeTime(val) {
+      if (typeof val === "number") return val;
+      if (typeof val === "string") {
+        const t = Date.parse(val);
+        return isNaN(t) ? null : t;
+      }
+      return null;
+    }
+    function splitByUnit(arr) {
+      arr = arr.map(d => ({
+        ...d,
+        measure_time_ms: normalizeTime(d.measure_time)
+      })).filter(d => d.measure_time_ms !== null);
+      return {
+        temp: arr.filter(d => d.unit === "°C").sort((a,b)=>a.measure_time_ms-b.measure_time_ms),
+        o2:   arr.filter(d => d.unit === "mg/L").sort((a,b)=>a.measure_time_ms-b.measure_time_ms),
+        sal:  arr.filter(d => d.unit === "g/Kg").sort((a,b)=>a.measure_time_ms-b.measure_time_ms),
+        ph:   arr.filter(d => d.unit === "pH").sort((a,b)=>a.measure_time_ms-b.measure_time_ms)
+      };
+    }
+
+    let chartTemp = null, chartO2 = null, chartSal = null, chartPh = null;
+    let dataA = { temp: [], o2: [], sal: [], ph: [] };
+    let dataB = { temp: [], o2: [], sal: [], ph: [] };
+    let lastAnalysis = null;
+
+    // 여러 파일을 읽어 모두 합쳐 반환
+    function loadMultipleFiles(fileList, callback) {
+      let count = fileList.length;
+      let allArr = [];
+      if (count === 0) { callback([]); return; }
+      for (let i = 0; i < fileList.length && i < 4; i++) { // 최대 4개만
+        const file = fileList[i];
+        const reader = new FileReader();
+        reader.onload = evt => {
+          let arr;
+          try {
+            arr = JSON.parse(evt.target.result);
+            if (!Array.isArray(arr)) arr = [];
+          } catch { arr = []; }
+          allArr = allArr.concat(arr);
+          count--;
+          if (count === 0) callback(allArr);
+        };
+        reader.readAsText(file);
+      }
+    }
+
+    document.getElementById('fileA').addEventListener('change', e => {
+      loadMultipleFiles(e.target.files, arr => {
+        dataA = splitByUnit(arr);
+        document.getElementById('alert').textContent = "A 파일 업로드 완료 (" + arr.length + "개 데이터)";
+      });
+    });
+    document.getElementById('fileB').addEventListener('change', e => {
+      loadMultipleFiles(e.target.files, arr => {
+        dataB = splitByUnit(arr);
+        document.getElementById('alert').textContent = "B 파일 업로드 완료 (" + arr.length + "개 데이터)";
+      });
+    });
+
+    function extractSeries(arr) {
+      return arr.map(d => ({
+        t: d.measure_time_ms,
+        v: d.value
+      }));
+    }
+
+    function pearson(x, y) {
+      const n = x.length;
+      if (n < 2) return null;
+      const avgX = x.reduce((a,b)=>a+b,0)/n;
+      const avgY = y.reduce((a,b)=>a+b,0)/n;
+      let num = 0, denX = 0, denY = 0;
+      for(let i=0;i<n;i++){
+        num += (x[i]-avgX)*(y[i]-avgY);
+        denX += Math.pow(x[i]-avgX,2);
+        denY += Math.pow(y[i]-avgY,2);
+      }
+      if (denX === 0 || denY === 0) return null;
+      return num / Math.sqrt(denX*denY);
+    }
+
+    function dtw(a, b) {
+      const n = a.length, m = b.length;
+      const dp = Array.from({length:n+1},()=>Array(m+1).fill(Infinity));
+      dp[0][0]=0;
+      for(let i=1;i<=n;i++){
+        for(let j=1;j<=m;j++){
+          const cost = Math.abs(a[i-1]-b[j-1]);
+          dp[i][j] = cost + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+        }
+      }
+      return dp[n][m]/(n+m);
+    }
+
+    function diff(arr) {
+      const out = [];
+      for(let i=1;i<arr.length;i++) out.push(arr[i]-arr[i-1]);
+      return out;
+    }
+
+    function analyze() {
+      document.getElementById('alert').textContent = "";
+      let analysisSummary = {};
+
+      analysisSummary.temp = plotChart('chartTemp', '수온(℃)', dataA.temp, dataB.temp, '#1976d2', '#ff9800');
+      analysisSummary.o2   = plotChart('chartO2', '용존산소(mg/L)', dataA.o2, dataB.o2, '#388e3c', '#d32f2f');
+      analysisSummary.sal  = plotChart('chartSal', '염도(g/Kg)', dataA.sal, dataB.sal, '#0288d1', '#fbc02d');
+      analysisSummary.ph   = plotChart('chartPh', 'pH', dataA.ph, dataB.ph, '#7b1fa2', '#c2185b');
+
+      if (Object.values(analysisSummary).some(x => x)) {
+        document.getElementById('saveBtn').style.display = "inline-block";
+        lastAnalysis = analysisSummary;
+      } else {
+        document.getElementById('saveBtn').style.display = "none";
+        lastAnalysis = null;
+      }
+    }
+
+    function plotChart(canvasId, label, arrA, arrB, colorA, colorB) {
+      if ((!arrA || arrA.length === 0) && (!arrB || arrB.length === 0)) {
+        if (window[canvasId] && typeof window[canvasId].destroy === 'function') window[canvasId].destroy();
+        return null;
+      }
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      const serA = extractSeries(arrA);
+      const serB = extractSeries(arrB);
+
+      const allTimes = Array.from(new Set([...serA, ...serB].map(d => d.t))).sort((a, b) => a - b);
+      const labels = allTimes.map(min => {
+        const dt = new Date(min);
+        return dt.getFullYear() + '-' +
+               String(dt.getMonth()+1).padStart(2,'0') + '-' +
+               String(dt.getDate()).padStart(2,'0') + ' ' +
+               String(dt.getHours()).padStart(2,'0') + ':' +
+               String(dt.getMinutes()).padStart(2,'0');
+      });
+
+      const mapA = new Map(serA.map(d => [d.t, d.v]));
+      const mapB = new Map(serB.map(d => [d.t, d.v]));
+      const dataA = allTimes.map(t => mapA.has(t) ? mapA.get(t) : null);
+      const dataB = allTimes.map(t => mapB.has(t) ? mapB.get(t) : null);
+
+      const paired = allTimes.map(t => [mapA.get(t), mapB.get(t)]).filter(([a,b]) => a!=null && b!=null);
+      let similarity = null, dtwVal = null, diffCorr = null;
+      if (paired.length >= 2) {
+        const xs = paired.map(p=>p[0]);
+        const ys = paired.map(p=>p[1]);
+        similarity = pearson(xs, ys);
+        dtwVal = dtw(xs, ys);
+        const dx = diff(xs), dy = diff(ys);
+        if (dx.length >= 2 && dy.length >= 2) diffCorr = pearson(dx, dy);
+      }
+
+      if (window[canvasId] && typeof window[canvasId].destroy === 'function') window[canvasId].destroy();
+
+      window[canvasId] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'A',
+              data: dataA,
+              borderColor: colorA,
+              backgroundColor: colorA + '22',
+              pointBackgroundColor: colorA,
+              pointRadius: 3,
+              spanGaps: true,
+              borderWidth: 2
+            },
+            {
+              label: 'B',
+              data: dataB,
+              borderColor: colorB,
+              backgroundColor: colorB + '22',
+              pointBackgroundColor: colorB,
+              pointRadius: 3,
+              spanGaps: true,
+              borderWidth: 2
+            }
+          ]
+        },
+        options: {
+          responsive: false,
+          plugins: {
+            legend: { display: true },
+            title: {
+              display: true,
+              text:
+                (similarity !== null
+                  ? `A/B 상관계수: ${similarity.toFixed(3)} | `
+                  : 'A/B 상관계수: 데이터 부족 | ') +
+                (diffCorr !== null
+                  ? `패턴(변화율) 상관계수: ${diffCorr.toFixed(3)} | `
+                  : '패턴(변화율) 상관계수: 데이터 부족 | ') +
+                (dtwVal !== null
+                  ? `DTW(패턴거리): ${dtwVal.toFixed(3)}`
+                  : 'DTW(패턴거리): 데이터 부족')
+            }
+          },
+          scales: {
+            y: {
+              title: { display: true, text: label },
+              min: 0
+            }
+          }
+        }
+      });
+
+      return {
+        label,
+        similarity,
+        diffCorr,
+        dtwVal,
+        dataA, dataB,
+        labels
+      };
+    }
+
+    function saveAnalysis() {
+      if (!lastAnalysis) {
+        alert("먼저 분석을 실행하세요.");
+        return;
+      }
+      saveFile(lastAnalysis, "ab_analysis_result.json");
+    }
+  </script>
+</body>
+</html>
