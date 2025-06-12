@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <title>시간대별 배치처리 JSON 가공 서비스</title>
+  <style>
+    body { font-family: '맑은 고딕', Arial, sans-serif; margin:40px; }
+    h2 { color: #1976d2; }
+    .input-group { margin-bottom: 15px; }
+    label { margin-right: 10px; }
+    select, input[type="file"] { font-size: 16px; }
+    #result { margin-top: 30px; }
+    #downloadBtn { margin-top: 20px; }
+    #alert { color: red; }
+  </style>
+</head>
+<body>
+<nav class="main-nav">
+  <ul>
+    <li><a href="summary.html" class="menu-btn">시스템 개요도</a></li>
+    <li><a href="Sensor Error detect.html" class="menu-btn">바이오파울링 AI 인식 시스템</a></li>
+    <li><a href="maintenance.html" class="menu-btn">관측 부표 유지보수 관리</a></li>
+    <li><a href="AB Check.html" class="menu-btn">관측기기 A/B 수질지표 비교 분석 (패턴 유사성)</a></li>
+    <li><a href="serial.html" class="menu-btn">관측부표 일련번호 생성기</a></li>
+    <li><a href="report.html" class="menu-btn">관측부표 유지보수 보고서 툴</a></li>
+    <li><a href="https://metaocean.odn.us" class="menu-btn">메타오션 데이터서비스</a></li>
+  </ul>
+</nav>
+  <h2>시간대별 배치처리 JSON 가공 서비스</h2>
+  <div class="input-group">
+    <label>배치처리 간격(분): 
+      <select id="interval">
+        <option value="5">5분</option>
+        <option value="10">10분</option>
+        <option value="30">30분</option>
+        <option value="60">60분</option>
+      </select>
+    </label>
+    <label>JSON 파일 업로드: 
+      <input type="file" id="fileInput" accept=".json">
+    </label>
+  </div>
+  <button id="processBtn">배치처리 및 다운로드</button>
+  <div id="alert"></div>
+  <div id="result"></div>
+  <script>
+    // 파일 저장 함수
+    function saveFile(data, filename = "batched_data.json") {
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // 배치처리(그룹 평균) 함수
+    function batchProcess(data, intervalMin) {
+      // intervalMin: 5, 10, 30, 60
+      const groups = {};
+      data.forEach(d => {
+        // ms → 그룹 시작 시각(분 단위)
+        const groupKey = Math.floor(d.measure_time / 60000 / intervalMin) * intervalMin;
+        if (!groups[groupKey]) groups[groupKey] = [];
+        groups[groupKey].push(d);
+      });
+      // 각 그룹별 평균값 등 대표값 추출
+      const result = Object.entries(groups).map(([groupMin, arr]) => {
+        // 대표값: 평균 value, 첫번째 좌표/단위/디바이스, 그룹 시작 시각(분)
+        const avgValue = arr.reduce((sum, d) => sum + (typeof d.value === "number" ? d.value : 0), 0) / arr.length;
+        return {
+          coordinates: arr[0].coordinates,
+          unit: arr[0].unit,
+          device_id: arr[0].device_id,
+          measure_time: new Date(groupMin * 60000).toISOString(), // 그룹 시작 시각(ISO 문자열)
+          value: avgValue
+        };
+      });
+      return result;
+    }
+
+    document.getElementById('processBtn').onclick = function() {
+      const fileInput = document.getElementById('fileInput');
+      const interval = parseInt(document.getElementById('interval').value, 10);
+      const alertDiv = document.getElementById('alert');
+      alertDiv.textContent = '';
+      if (!fileInput.files.length) {
+        alertDiv.textContent = 'JSON 파일을 선택하세요.';
+        return;
+      }
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        let data;
+        try {
+          data = JSON.parse(e.target.result);
+        } catch {
+          alertDiv.textContent = 'JSON 파일 형식이 올바르지 않습니다.';
+          return;
+        }
+        if (!Array.isArray(data)) {
+          alertDiv.textContent = '배열(JSON Array) 형식의 파일만 지원합니다.';
+          return;
+        }
+        const batched = batchProcess(data, interval);
+        saveFile(batched, `batched_${interval}min.json`);
+        document.getElementById('result').innerHTML =
+          `<b>총 ${batched.length}개 그룹으로 가공 완료!</b><br>
+          <small>다운로드된 파일명: <b>batched_${interval}min.json</b></small>`;
+      };
+      reader.readAsText(file);
+    };
+  </script>
+</body>
+</html>
