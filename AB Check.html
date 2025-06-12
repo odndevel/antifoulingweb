@@ -3,7 +3,7 @@
 <head>
   <link rel="stylesheet" href="style.css">
   <meta charset="UTF-8" />
-  <title>관측기기 A/B 수질지표 비교 분석 (패턴 유사성)</title>
+  <title>관측기기 A/B 수질지표 비교 분석 (패턴 유사성 + 파일 저장)</title>
   <style>
     body { font-family: '맑은 고딕', Arial, sans-serif; margin: 40px; }
     h2 { color: #1976d2; }
@@ -20,6 +20,7 @@
     .footnote li { margin-bottom:8px; }
     .footnote sup { color:#1976d2; }
     .footnote-desc { font-size:13px; color:#888; }
+    #saveBtn { margin-bottom: 30px; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -35,9 +36,7 @@
     <li><a href="https://metaocean.odn.us" class="menu-btn">메타오션 데이터서비스</a></li>
   </ul>
 </nav>
-  <div class="container">
-  <center>
-  <h2>관측기기 A/B 수질지표 비교 분석 (패턴 유사성)</h2></center>
+  <h2>관측기기 A/B 수질지표 비교 분석 (패턴 유사성)</h2>
   <button onclick="toggleInputArea()" id="toggleBtn">API/파일 입력 열기</button>
   <div id="inputArea">
     <div class="input-section">
@@ -88,13 +87,13 @@
     </div>
     <button onclick="analyze()">분석하기</button>
   </div>
+  <button id="saveBtn" onclick="saveAnalysis()" style="display:none;">분석 결과 저장</button>
   <div id="alert"></div>
   <div class="chart-container"><canvas id="chartTemp" width="1000" height="300"></canvas></div>
   <div class="chart-container"><canvas id="chartO2" width="1000" height="300"></canvas></div>
   <div class="chart-container"><canvas id="chartSal" width="1000" height="300"></canvas></div>
   <div class="chart-container"><canvas id="chartPh" width="1000" height="300"></canvas></div>
 
-  <!-- 아래가 각주 설명입니다 -->
   <div class="footnote">
     <b>A/B 관측기기 비교란?</b><br>
     두 개의 관측기기(A, B)에서 같은 시기(분단위)로 집계한 수질 데이터를 시간축에 맞춰 나란히 비교하여,
@@ -127,9 +126,28 @@
   </div>
 
   <script>
+    // 공통 파일 저장 함수 (다운로드 폴더에 자동 저장)
+    function saveFile(data, filename = "biofouling_data.json") {
+      let blob;
+      if (typeof data === "string") {
+        blob = new Blob([data], {type: "application/octet-stream"});
+      } else {
+        blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
     let chartTemp = null, chartO2 = null, chartSal = null, chartPh = null;
     let dataA = { temp: null, o2: null, sal: null, ph: null };
     let dataB = { temp: null, o2: null, sal: null, ph: null };
+    let lastAnalysis = null; // 분석 결과 저장용
 
     function normalizeArray(arr) {
       if (Array.isArray(arr)) return arr;
@@ -243,17 +261,28 @@
 
     function analyze() {
       document.getElementById('alert').textContent = "";
+      let analysisSummary = {};
 
-      plotChart('chartTemp', '수온(℃)', dataA.temp, dataB.temp, '#1976d2', '#ff9800');
-      plotChart('chartO2', '용존산소(mg/L)', dataA.o2, dataB.o2, '#388e3c', '#d32f2f');
-      plotChart('chartSal', '염도(g/Kg)', dataA.sal, dataB.sal, '#0288d1', '#fbc02d');
-      plotChart('chartPh', 'pH', dataA.ph, dataB.ph, '#7b1fa2', '#c2185b');
+      analysisSummary.temp = plotChart('chartTemp', '수온(℃)', dataA.temp, dataB.temp, '#1976d2', '#ff9800');
+      analysisSummary.o2   = plotChart('chartO2', '용존산소(mg/L)', dataA.o2, dataB.o2, '#388e3c', '#d32f2f');
+      analysisSummary.sal  = plotChart('chartSal', '염도(g/Kg)', dataA.sal, dataB.sal, '#0288d1', '#fbc02d');
+      analysisSummary.ph   = plotChart('chartPh', 'pH', dataA.ph, dataB.ph, '#7b1fa2', '#c2185b');
+
+      // 분석 결과가 하나라도 있으면 저장 버튼 표시
+      if (Object.values(analysisSummary).some(x => x)) {
+        document.getElementById('saveBtn').style.display = "inline-block";
+        lastAnalysis = analysisSummary;
+      } else {
+        document.getElementById('saveBtn').style.display = "none";
+        lastAnalysis = null;
+      }
     }
 
+    // plotChart: 분석 결과 요약 반환
     function plotChart(canvasId, label, arrA, arrB, colorA, colorB) {
       if ((!arrA || arrA.length === 0) && (!arrB || arrB.length === 0)) {
         if (window[canvasId] && typeof window[canvasId].destroy === 'function') window[canvasId].destroy();
-        return;
+        return null;
       }
       const ctx = document.getElementById(canvasId).getContext('2d');
       const serA = extractSeries(arrA);
@@ -341,8 +370,26 @@
           }
         }
       });
+
+      // 분석 요약 반환
+      return {
+        label,
+        similarity,
+        diffCorr,
+        dtwVal,
+        dataA, dataB,
+        labels
+      };
+    }
+
+    // 분석 결과 저장
+    function saveAnalysis() {
+      if (!lastAnalysis) {
+        alert("먼저 분석을 실행하세요.");
+        return;
+      }
+      saveFile(lastAnalysis, "ab_analysis_result.json");
     }
   </script>
-  </div>
 </body>
 </html>
