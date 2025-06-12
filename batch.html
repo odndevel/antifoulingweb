@@ -1,33 +1,20 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <link rel="stylesheet" href="style.css">
   <meta charset="UTF-8" />
-  <title>시간대별 배치처리 JSON 가공 서비스</title>
+  <title>JSON 배치처리 및 파일명 자동 변환</title>
   <style>
     body { font-family: '맑은 고딕', Arial, sans-serif; margin:40px; }
     h2 { color: #1976d2; }
     .input-group { margin-bottom: 15px; }
     label { margin-right: 10px; }
     select, input[type="file"] { font-size: 16px; }
-    #result { margin-top: 30px; }
-    #downloadBtn { margin-top: 20px; }
     #alert { color: red; }
+    #result { margin-top: 20px; }
   </style>
 </head>
 <body>
-<nav class="main-nav">
-  <ul>
-    <li><a href="summary.html" class="menu-btn">시스템 개요도</a></li>
-    <li><a href="Sensor Error detect.html" class="menu-btn">바이오파울링 AI 인식 시스템</a></li>
-    <li><a href="maintenance.html" class="menu-btn">관측 부표 유지보수 관리</a></li>
-    <li><a href="AB Check.html" class="menu-btn">관측기기 A/B 수질지표 비교 분석 (패턴 유사성)</a></li>
-    <li><a href="serial.html" class="menu-btn">관측부표 일련번호 생성기</a></li>
-    <li><a href="report.html" class="menu-btn">관측부표 유지보수 보고서 툴</a></li>
-    <li><a href="https://metaocean.odn.us" class="menu-btn">메타오션 데이터서비스</a></li>
-  </ul>
-</nav>
-  <h2>시간대별 배치처리 JSON 가공 서비스</h2>
+  <h2>JSON 배치처리 및 파일명 자동 변환</h2>
   <div class="input-group">
     <label>배치처리 간격(분): 
       <select id="interval">
@@ -42,49 +29,66 @@
       <input type="file" id="fileInput" accept=".json">
     </label>
   </div>
-  <button id="processBtn">배치처리 및 다운로드</button>
+  <button onclick="processFile()">배치처리 및 파일명 변환 저장</button>
   <div id="alert"></div>
   <div id="result"></div>
   <script>
-    // 파일 저장 함수
-    function saveFile(data, filename = "batched_data.json") {
-      const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+    // 지표명 매핑
+    const unitMap = {
+      "°C": "temp",
+      "g/Kg": "Sal",
+      "pH": "pH",
+      "mg/L": "Do"
+    };
+
+    // 날짜 YYMMDD,hh 포맷
+    function formatDate(dt) {
+      const d = new Date(dt);
+      const yy = String(d.getFullYear()).slice(2,4);
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const dd = String(d.getDate()).padStart(2,'0');
+      const hh = String(d.getHours()).padStart(2,'0');
+      return `${yy}${mm}${dd},${hh}`;
     }
 
-    // 배치처리(그룹 평균) 함수
+    // 측정주기(분) 추정
+    function estimateInterval(times) {
+      if (times.length < 2) return null;
+      const mins = [];
+      for (let i=1;i<times.length;i++) {
+        const diff = Math.round((times[i] - times[i-1]) / 60000);
+        if (diff > 0 && diff <= 70) mins.push(diff);
+      }
+      if (!mins.length) return null;
+      const freq = {};
+      mins.forEach(m=>{freq[m]=1+(freq[m]||0);});
+      const maxCount = Math.max(...Object.values(freq));
+      const candidate = Object.entries(freq).filter(([k,v])=>v===maxCount).map(([k])=>parseInt(k));
+      const allowed = [1,5,10,30,60];
+      for (const m of allowed) if (candidate.includes(m)) return m;
+      return candidate[0];
+    }
+
+    // 배치처리(그룹 평균)
     function batchProcess(data, intervalMin) {
-      // intervalMin: 5, 10, 30, 60
       const groups = {};
       data.forEach(d => {
-        // ms → 그룹 시작 시각(분 단위)
-        const groupKey = Math.floor(d.measure_time / 60000 / intervalMin) * intervalMin;
+        const t = new Date(d.measure_time).getTime();
+        const groupKey = Math.floor(t / 60000 / intervalMin) * intervalMin;
         if (!groups[groupKey]) groups[groupKey] = [];
         groups[groupKey].push(d);
       });
-      // 각 그룹별 평균값 등 대표값 추출
-      const result = Object.entries(groups).map(([groupMin, arr]) => {
-        // 대표값: 평균 value, 첫번째 좌표/단위/디바이스, 그룹 시작 시각(분)
+      return Object.entries(groups).map(([groupMin, arr]) => {
         const avgValue = arr.reduce((sum, d) => sum + (typeof d.value === "number" ? d.value : 0), 0) / arr.length;
         return {
-          coordinates: arr[0].coordinates,
-          unit: arr[0].unit,
-          device_id: arr[0].device_id,
-          measure_time: new Date(groupMin * 60000).toISOString(), // 그룹 시작 시각(ISO 문자열)
+          ...arr[0],
+          measure_time: new Date(groupMin * 60000).toISOString(),
           value: avgValue
         };
       });
-      return result;
     }
 
-    document.getElementById('processBtn').onclick = function() {
+    function processFile() {
       const fileInput = document.getElementById('fileInput');
       const interval = parseInt(document.getElementById('interval').value, 10);
       const alertDiv = document.getElementById('alert');
@@ -103,18 +107,45 @@
           alertDiv.textContent = 'JSON 파일 형식이 올바르지 않습니다.';
           return;
         }
-        if (!Array.isArray(data)) {
-          alertDiv.textContent = '배열(JSON Array) 형식의 파일만 지원합니다.';
+        if (!Array.isArray(data) || !data.length) {
+          alertDiv.textContent = '비어있거나 배열이 아닌 JSON입니다.';
           return;
         }
+        // 배치처리
         const batched = batchProcess(data, interval);
-        saveFile(batched, `batched_${interval}min.json`);
+
+        // 파일명 생성
+        const device_id = batched[0].device_id || "unknown";
+        const unit = batched[0].unit || "unknown";
+        const indicator = unitMap[unit] || unit.replace(/[^a-zA-Z0-9]/g,'');
+        const times = batched.map(d => new Date(d.measure_time).getTime()).filter(x=>!isNaN(x)).sort((a,b)=>a-b);
+        if (!times.length) {
+          alertDiv.textContent = 'measure_time 값이 없습니다.';
+          return;
+        }
+        const minTime = new Date(times[0]);
+        const maxTime = new Date(times[times.length-1]);
+        const minStr = formatDate(minTime);
+        const maxStr = formatDate(maxTime);
+        const intervalStr = `[${interval}]`;
+        const fileName = `${device_id}_${indicator}_${minStr}-${maxStr}_${intervalStr}.json`;
+
+        // 저장
+        const blob = new Blob([JSON.stringify(batched, null, 2)], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
         document.getElementById('result').innerHTML =
-          `<b>총 ${batched.length}개 그룹으로 가공 완료!</b><br>
-          <small>다운로드된 파일명: <b>batched_${interval}min.json</b></small>`;
+          `<b>새 파일명:</b> <span style="color:#1976d2">${fileName}</span><br>저장이 완료되었습니다.`;
       };
       reader.readAsText(file);
-    };
+    }
   </script>
 </body>
 </html>
